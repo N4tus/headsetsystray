@@ -1,20 +1,36 @@
+use bitflags::bitflags;
 use ksni::blocking::TrayMethods;
 
-#[derive(Debug)]
+bitflags! {
+    struct HeadestToggle: u32 {
+        const SIDETONE = 0b01;
+        const VOICEPROMT = 0b10;
+    }
+}
+
 struct MyTray {
-    active: bool,
+    flags: HeadestToggle,
 }
 
 impl MyTray {
-    fn toggle(&mut self) {
-        self.active = !self.active;
+    fn command(&self, flag: HeadestToggle, p: &str) {
         let mut c = std::process::Command::new("headsetcontrol");
-        if self.active {
-            c.args(["-s", "1"]);
+        if self.flags.intersects(flag) {
+            c.args([p, "1"]);
         } else {
-            c.args(["-s", "0"]);
+            c.args([p, "0"]);
         }
         _ = c.spawn();
+    }
+
+    fn toggle_sidetone(&mut self) {
+        self.flags.toggle(HeadestToggle::SIDETONE);
+        self.command(HeadestToggle::SIDETONE, "-s");
+    }
+
+    fn toggle_voicepromt(&mut self) {
+        self.flags.toggle(HeadestToggle::VOICEPROMT);
+        self.command(HeadestToggle::VOICEPROMT, "-v");
     }
 }
 
@@ -26,7 +42,7 @@ impl ksni::Tray for MyTray {
         "headset".into()
     }
     fn title(&self) -> String {
-        if self.active {
+        if self.flags.intersects(HeadestToggle::SIDETONE) {
             "Headset Control (active)"
         } else {
             "Headset Control (inactive)"
@@ -34,15 +50,22 @@ impl ksni::Tray for MyTray {
         .into()
     }
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.toggle();
+        self.toggle_sidetone();
     }
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
         vec![
             CheckmarkItem {
-                label: "Active".into(),
-                checked: self.active,
-                activate: Box::new(Self::toggle),
+                label: "Sidetone".into(),
+                checked: self.flags.intersects(HeadestToggle::SIDETONE),
+                activate: Box::new(Self::toggle_sidetone),
+                ..Default::default()
+            }
+            .into(),
+            CheckmarkItem {
+                label: "Voice Promt".into(),
+                checked: self.flags.intersects(HeadestToggle::VOICEPROMT),
+                activate: Box::new(Self::toggle_voicepromt),
                 ..Default::default()
             }
             .into(),
@@ -59,7 +82,9 @@ impl ksni::Tray for MyTray {
 }
 
 fn main() {
-    let tray = MyTray { active: false };
+    let tray = MyTray {
+        flags: HeadestToggle::empty(),
+    };
     let _handle = tray.spawn().unwrap();
 
     loop {
